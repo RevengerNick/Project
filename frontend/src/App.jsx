@@ -1,277 +1,74 @@
-import React, { useState, useEffect } from 'react';
-import './App.css'; // Теперь снова нужен, так как стили будут из App.css
-import { Bar } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
+import React from 'react';
+import { useFinancialData } from './hooks/useFinancialData';
+import { prepareChartData, getChartOptions } from './utils/chartHelper';
 
-// Регистрируем компоненты Chart.js, чтобы они были доступны для использования
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend
-);
+import FinancialCard from './components/FinancialCard.jsx';
+import BarChart from './components/BarChart.jsx';
+import LoadingSpinner from './components/LoadingSpinner.jsx';
+import ErrorMessage from './components/ErrorMessage.jsx';
+import RawDataViewer from './components/RawDataViewer.jsx';
+
+import { FiTrendingUp, FiTrendingDown, FiDollarSign } from 'react-icons/fi';
 
 function App() {
-  const [financialData, setFinancialData] = useState(null); // Состояние для хранения данных
-  const [loading, setLoading] = useState(true); // Состояние для индикатора загрузки
-  const [error, setError] = useState(null); // Состояние для ошибок
+  const { data: financialData, loading, error } = useFinancialData();
 
-  useEffect(() => {
-    const fetchFinancialData = async () => {
-      try {
-        // Запрос к вашему бэкенду. Используем относительный путь /api/,
-        // потому что Vite-прокси перенаправит его на http://127.0.0.1:5000/api/
-        const response = await fetch('/api/financial_summary'); 
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        setFinancialData(data);
-      } catch (e) {
-        console.error("Ошибка при получении данных:", e);
-        setError(e.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchFinancialData();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="App"> {/* Используем старый класс App */}
-        <header className="App-header">
-          <p>Загрузка финансовых данных...</p>
-        </header>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="App">
-        <header className="App-header">
-          <p>Ошибка: {error}</p>
-        </header>
-      </div>
-    );
-  }
-
+  if (loading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error} />;
   if (!financialData) {
-    return (
-      <div className="App">
-        <header className="App-header">
-          <p>Данные не загружены.</p>
-        </header>
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><p>Данные не найдены.</p></div>;
   }
 
-  // Подготовка данных для графика расходов по месяцам
-  // Flask возвращает "raw_expenses_data" как список объектов с "Месяц" и "Сумма"
-  const expensesByMonth = financialData.raw_expenses_data.reduce((acc, item) => {
-    const month = item["Месяц"];
-    const amount = item["Сумма"];
-    if (acc[month]) {
-      acc[month] += amount;
-    } else {
-      acc[month] = amount;
-    }
-    return acc;
-  }, {});
-
-  const expenseChartData = {
-    labels: Object.keys(expensesByMonth), // Месяцы
-    datasets: [
-      {
-        label: 'Расходы',
-        data: Object.values(expensesByMonth), // Суммы расходов
-        backgroundColor: 'rgba(255, 99, 132, 0.6)',
-        borderColor: 'rgba(255, 99, 132, 1)',
-        borderWidth: 1,
-      },
-    ],
-  };
-
-  const expenseChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top',
-        labels: {
-            color: 'black', // Цвет текста легенды для светлого фона
-        }
-      },
-      title: {
-        display: true,
-        text: 'Расходы по месяцам',
-        color: 'black', // Цвет заголовка для светлого фона
-        font: {
-            size: 18,
-        }
-      },
-      tooltip: {
-          callbacks: {
-              label: function(context) {
-                  let label = context.dataset.label || '';
-                  if (label) {
-                      label += ': ';
-                  }
-                  if (context.parsed.y !== null) {
-                      label += new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' }).format(context.parsed.y);
-                  }
-                  return label;
-              }
-          },
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          titleColor: 'white',
-          bodyColor: 'white',
-          borderColor: 'rgba(255,255,255,0.2)',
-          borderWidth: 1,
-          borderRadius: 5,
-      }
-    },
-    scales: {
-      x: {
-        ticks: {
-          color: 'black' // Цвет меток на оси X для светлого фона
-        },
-        grid: {
-            color: 'rgba(0, 0, 0, 0.1)' // Цвет сетки на оси X для светлого фона
-        }
-      },
-      y: {
-        ticks: {
-          color: 'black' // Цвет меток на оси Y для светлого фона
-        },
-        grid: {
-            color: 'rgba(0, 0, 0, 0.1)' // Цвет сетки на оси Y для светлого фона
-        }
-      }
-    }
-  };
-
-  // Подготовка данных для графика выручки по месяцам
-  const revenueByMonth = financialData.raw_revenue_data.reduce((acc, item) => {
-    const month = item["Месяц"];
-    const amount = (item["Продажи"] || 0) + (item["Услуги"] || 0); 
-    
-    if (acc[month]) {
-      acc[month] += amount;
-    } else {
-      acc[month] = amount;
-    }
-    return acc;
-  }, {});
-
-  const revenueChartData = {
-    labels: Object.keys(revenueByMonth), // Месяцы
-    datasets: [
-      {
-        label: 'Выручка',
-        data: Object.values(revenueByMonth), // Суммы выручки
-        backgroundColor: 'rgba(75, 192, 192, 0.6)',
-        borderColor: 'rgba(75, 192, 192, 1)',
-        borderWidth: 1,
-      },
-    ],
-  };
-
-  const revenueChartOptions = {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-          legend: {
-              position: 'top',
-              labels: {
-                  color: 'black',
-              }
-          },
-          title: {
-              display: true,
-              text: 'Выручка по месяцам',
-              color: 'black',
-              font: {
-                  size: 18,
-              }
-          },
-          tooltip: {
-              callbacks: {
-                  label: function(context) {
-                      let label = context.dataset.label || '';
-                      if (label) {
-                          label += ': ';
-                      }
-                      if (context.parsed.y !== null) {
-                          label += new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' }).format(context.parsed.y);
-                      }
-                      return label;
-                  }
-              },
-              backgroundColor: 'rgba(0,0,0,0.7)',
-              titleColor: 'white',
-              bodyColor: 'white',
-              borderColor: 'rgba(255,255,255,0.2)',
-              borderWidth: 1,
-              borderRadius: 5,
-          }
-      },
-      scales: {
-          x: {
-            ticks: {
-              color: 'black'
-            },
-            grid: {
-                color: 'rgba(0, 0, 0, 0.1)'
-            }
-          },
-          y: {
-            ticks: {
-              color: 'black'
-            },
-            grid: {
-                color: 'rgba(0, 0, 0, 0.1)'
-            }
-          }
-      }
-  };
+  const expenseChartData = prepareChartData(financialData.raw_expenses_data, 'Расходы', 'Сумма');
+  const revenueChartData = prepareChartData(financialData.raw_revenue_data, 'Выручка', ['Продажи', 'Услуги']);
+  
+  const expenseChartOptions = getChartOptions('Расходы по месяцам');
+  const revenueChartOptions = getChartOptions('Выручка по месяцам');
+  
+  const isProfitNegative = String(financialData.net_profit || '').startsWith('-');
 
   return (
-    <div className="App"> {/* Используем старый класс App */}
-      <header className="App-header">
-        <h1>Обзор Финансовых Показателей</h1>
-        <p>Общая выручка: {financialData.total_revenue}</p>
-        <p>Общие расходы: {financialData.total_expenses}</p>
-        <p>Чистая прибыль: {financialData.net_profit}</p>
+    <div className="min-h-screen bg-slate-50 text-slate-800">
+      <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        <header className="mb-10">
+          <h1 className="text-4xl font-bold tracking-tight text-slate-900 mb-2">Финансовый Дашборд</h1>
+          <p className="text-lg text-slate-500">Обзор ключевых показателей вашего бизнеса</p>
+        </header>
 
-        {/* Графики */}
-        <div style={{ width: '80%', margin: 'auto', marginTop: '20px' }}>
-          <Bar data={expenseChartData} options={expenseChartOptions} />
-        </div>
-        <div style={{ width: '80%', margin: 'auto', marginTop: '40px' }}>
-          <Bar data={revenueChartData} options={revenueChartOptions} />
-        </div>
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+          <FinancialCard 
+            title="Общая выручка"
+            value={financialData.total_revenue}
+            icon={<FiTrendingUp size={24} className="text-green-700" />}
+            colorClass={{ bg: 'bg-green-100', text: 'text-green-600' }}
+          />
+          <FinancialCard 
+            title="Общие расходы"
+            value={financialData.total_expenses}
+            icon={<FiTrendingDown size={24} className="text-red-700" />}
+            colorClass={{ bg: 'bg-red-100', text: 'text-red-600' }}
+          />
+          <FinancialCard 
+            title="Чистая прибыль"
+            value={financialData.net_profit}
+            icon={<FiDollarSign size={24} className={isProfitNegative ? "text-red-700" : "text-green-700"} />}
+            colorClass={{ 
+              bg: isProfitNegative ? 'bg-red-100' : 'bg-green-100', 
+              text: isProfitNegative ? 'text-red-600' : 'text-green-600' 
+            }}
+          />
+        </section>
 
-        {/* Сырые данные */}
-        <h2>Сырые данные о расходах:</h2>
-        <pre>{JSON.stringify(financialData.raw_expenses_data, null, 2)}</pre>
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+          <BarChart data={revenueChartData} options={revenueChartOptions} />
+          <BarChart data={expenseChartData} options={expenseChartOptions} />
+        </section>
 
-        <h2>Сырые данные о выручке:</h2>
-        <pre>{JSON.stringify(financialData.raw_revenue_data, null, 2)}</pre>
-      </header>
+        <section className="space-y-8">
+          <RawDataViewer title="Сырые данные о выручке" data={financialData.raw_revenue_data} />
+          <RawDataViewer title="Сырые данные о расходах" data={financialData.raw_expenses_data} />
+        </section>
+      </main>
     </div>
   );
 }
