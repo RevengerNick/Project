@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Загрузка и просмотр Excel-файла</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); max-width: 900px; margin: auto; }
+        h1, h2 { color: #333; }
+        .section { margin-bottom: 30px; border: 1px solid #eee; padding: 15px; border-radius: 5px; background-color: #f9f9f9; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; }
+        input[type="file"], input[type="text"], button {
+            padding: 10px; margin-bottom: 15px; border-radius: 5px; border: 1px solid #ddd; width: calc(100% - 22px);
+            box-sizing: border-box;
+        }
+        button { background-color: #007bff; color: white; cursor: pointer; border: none; }
+        button:hover { background-color: #0056b3; }
+        pre { background-color: #e2e2e2; padding: 15px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
+        select { padding: 10px; margin-bottom: 15px; border-radius: 5px; border: 1px solid #ddd; width: 100%; box-sizing: border-box; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Интеграция с FastAPI Excel API</h1>
+
+        <div class="section">
+            <h2>1. Загрузка Excel-файла</h2>
+            <label for="excelFile">Выберите Excel-файл (.xlsx/.xls):</label>
+            <input type="file" id="excelFile" accept=".xlsx,.xls">
+            <button onclick="uploadFile()">Загрузить файл</button>
+
+            <h3>Ответ сервера (Загрузка):</h3>
+            <pre id="uploadResponse"></pre>
+
+            <h3>Доступные листы:</h3>
+            <select id="sheetSelect" onchange="enableGetSheetDataButton()">
+                <option value="">Выберите лист для просмотра</option>
+            </select>
+        </div>
+
+        <div class="section">
+            <h2>2. Получение данных листа</h2>
+            <p>Сначала загрузите файл выше и выберите лист.</p>
+            <button onclick="getSheetData()" id="getSheetDataButton" disabled>Получить данные выбранного листа</button>
+
+            <h3>Ответ сервера (Данные листа):</h3>
+            <pre id="sheetDataResponse"></pre>
+
+            <h3>Предпросмотр таблицы:</h3>
+            <div id="tablePreview"></div>
+        </div>
+    </div>
+
+    <script>
+        // URL вашего FastAPI бэкенда
+        const API_BASE_URL = 'http://localhost:8000';
+
+        // Переменная для хранения загруженного файла, чтобы не перезагружать его для get_sheet_data
+        let uploadedFile = null;
+
+        // ====================================================================
+        // Функция для загрузки файла (Эндпоинт /upload_excel/)
+        // ====================================================================
+        async function uploadFile() {
+            const fileInput = document.getElementById('excelFile');
+            const uploadResponseDiv = document.getElementById('uploadResponse');
+            const sheetSelect = document.getElementById('sheetSelect');
+            const getSheetDataButton = document.getElementById('getSheetDataButton');
+
+            if (fileInput.files.length === 0) {
+                uploadResponseDiv.textContent = 'Пожалуйста, выберите файл.';
+                return;
+            }
+
+            const file = fileInput.files[0];
+            uploadedFile = file; // Сохраняем файл для последующего запроса данных листа
+
+            const formData = new FormData();
+            formData.append('file', file); // 'file' должно совпадать с именем параметра в FastAPI эндпоинте
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/upload_excel/`, {
+                    method: 'POST',
+                    body: formData // FormData автоматически устанавливает правильный Content-Type
+                });
+
+                const data = await response.json();
+                uploadResponseDiv.textContent = JSON.stringify(data, null, 2);
+
+                if (response.ok) {
+                    // Очищаем и заполняем выпадающий список листов
+                    sheetSelect.innerHTML = '<option value="">Выберите лист для просмотра</option>';
+                    if (data.sheet_names && data.sheet_names.length > 0) {
+                        data.sheet_names.forEach(sheetName => {
+                            const option = document.createElement('option');
+                            option.value = sheetName;
+                            option.textContent = sheetName;
+                            sheetSelect.appendChild(option);
+                        });
+                        sheetSelect.disabled = false; // Разрешаем выбор листа
+                    } else {
+                        sheetSelect.disabled = true;
+                    }
+                    getSheetDataButton.disabled = true; // Отключаем кнопку получения данных, пока лист не выбран
+                } else {
+                    sheetSelect.disabled = true;
+                    getSheetDataButton.disabled = true;
+                    alert(`Ошибка при загрузке: ${data.detail || 'Неизвестная ошибка'}`);
+                }
+
+            } catch (error) {
+                console.error('Ошибка сети или обработки:', error);
+                uploadResponseDiv.textContent = `Произошла ошибка: ${error.message}`;
+                sheetSelect.disabled = true;
+                getSheetDataButton.disabled = true;
+            }
+        }
+
+        // Включает кнопку получения данных листа, когда выбран лист
+        function enableGetSheetDataButton() {
+            const sheetSelect = document.getElementById('sheetSelect');
+            const getSheetDataButton = document.getElementById('getSheetDataButton');
+            getSheetDataButton.disabled = !sheetSelect.value; // Включаем, если выбрано что-то, кроме пустой опции
+        }
+
+        // ====================================================================
+        // Функция для получения данных конкретного листа (Эндпоинт /get_sheet_data/)
+        // ====================================================================
+        async function getSheetData() {
+            const sheetSelect = document.getElementById('sheetSelect');
+            const sheetDataResponseDiv = document.getElementById('sheetDataResponse');
+            const tablePreviewDiv = document.getElementById('tablePreview');
+
+            const selectedSheetName = sheetSelect.value;
+
+            if (!uploadedFile) {
+                sheetDataResponseDiv.textContent = 'Сначала загрузите файл.';
+                return;
+            }
+            if (!selectedSheetName) {
+                sheetDataResponseDiv.textContent = 'Пожалуйста, выберите лист.';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', uploadedFile); // Передаем тот же загруженный файл
+            formData.append('sheet_name', selectedSheetName); // Передаем выбранное имя листа
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/get_sheet_data/`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                sheetDataResponseDiv.textContent = JSON.stringify(data, null, 2);
+
+                if (response.ok) {
+                    displayTable(data.columns, data.data); // Отображаем данные в таблице
+                } else {
+                    tablePreviewDiv.innerHTML = ''; // Очищаем предпросмотр
+                    alert(`Ошибка при получении данных листа: ${data.detail || 'Неизвестная ошибка'}`);
+                }
+
+            } catch (error) {
+                console.error('Ошибка сети или обработки:', error);
+                sheetDataResponseDiv.textContent = `Произошла ошибка: ${error.message}`;
+                tablePreviewDiv.innerHTML = '';
+            }
+        }
+
+        // ====================================================================
+        // Функция для отображения данных в HTML-таблице
+        // ====================================================================
+        function displayTable(columns, data) {
+            const tablePreviewDiv = document.getElementById('tablePreview');
+            tablePreviewDiv.innerHTML = ''; // Очищаем предыдущую таблицу
+
+            if (!columns || columns.length === 0 || !data || data.length === 0) {
+                tablePreviewDiv.textContent = 'Нет данных для отображения или столбцов.';
+                return;
+            }
+
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tbody = document.createElement('tbody');
+
+            // Заголовки таблицы
+            const headerRow = document.createElement('tr');
+            columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Строки данных
+            data.forEach(rowData => {
+                const tr = document.createElement('tr');
+                columns.forEach(col => {
+                    const td = document.createElement('td');
+                    // Убедимся, что значение не undefined или null перед отображением
+                    td.textContent = rowData[col] !== null && rowData[col] !== undefined ? rowData[col] : '';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            tablePreviewDiv.appendChild(table);
+        }
+    </script>
+</body>
+</html>
