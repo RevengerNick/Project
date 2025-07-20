@@ -1,23 +1,20 @@
-version: '3.8'
-
 services:
-  # Сервис бэкенда
   backend:
     build: ./backend
-    # Имя контейнера для удобства
-    container_name: financial_backend
-    # Можно раскомментировать для отладки, чтобы получить доступ к API напрямую
-    # ports:
-    #   - "5000:5000"
+    container_name: financial_backend # <-- Имя для бэка
+    restart: unless-stopped
+    networks:
+      - vs_code_default
 
-  # Сервис фронтенда
   frontend:
     build: ./frontend
-    container_name: financial_frontend
-    ports:
-      # Пробрасываем порт 80 контейнера на порт 3000 на нашей машине
-      - "3000:80"
-    # Указываем, что фронтенд зависит от бэкенда.
-    # Docker Compose сначала запустит бэкенд, а потом фронтенд.
+    container_name: financial_frontend # <-- Имя для фронта
+    restart: unless-stopped
     depends_on:
       - backend
+    networks:
+      - vs_code_default
+
+networks:
+  vs_code_default:
+    external: true
